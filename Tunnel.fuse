@@ -1,18 +1,18 @@
 --[[--
   Copyright: (c) 2020, lublak <lublak.de@gmail.com>
-  GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+  GNU General Public License v3.0+ (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 
-  This fuse creates a 3D tunnel effect.
+  This fuse creates a 3D tunnel effect from a texture input.
 --]]--
 FuRegisterClass("Tunnel", CT_SourceTool, {
   REGS_Category          = "lublak",
   REGS_OpIconString      = "Tunnel",
-  REGS_OpDescription     = "Creates a 3d tunnel effect",
+  REGS_OpDescription     = "Creates a 3d tunnel effect from a texture input",
   REGS_URL               = "https://github.com/lublak/FusionFuses",
   REG_Source_GlobalCtrls = true,
   REG_Source_SizeCtrls   = true,
   REG_Source_AspectCtrls = true,
-  REG_Source_DepthCtrls  = true,
+  REG_Source_DepthCtrls  = false,
   REG_TimeVariant        = true,
 
   REG_Fuse_NoEdit        = true,
@@ -207,6 +207,7 @@ function Create()
   })
 end
 
+local lastreqtime = -2
 
 function Process(req)
   local realwidth = Width
@@ -244,7 +245,11 @@ function Process(req)
   local img = InImage:GetValue(req)
   local result = Image(imgattrs)
   local node = DVIPComputeNode(req, "TunnelKernel", TunnelKernel, "TunnelParams", TunnelParams)
-  local params = node:GetParamBlock(TunnelParams)
+
+  if (lastreqtime ~= req.Time - 1) then
+    params = node:GetParamBlock(TunnelParams)
+  end
+  lastreqtime = req.Time
 
   params.textureXCount = InTextureXCount:GetValue(req).Value
   params.textureYCount = InTextureYCount:GetValue(req).Value
