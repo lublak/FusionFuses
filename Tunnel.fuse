@@ -1,0 +1,314 @@
+--[[--
+  Copyright: (c) 2020, lublak <lublak.de@gmail.com>
+  GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+  This fuse creates a 3D tunnel effect.
+--]]--
+FuRegisterClass("Tunnel", CT_SourceTool, {
+  REGS_Category          = "lublak",
+  REGS_OpIconString      = "Tunnel",
+  REGS_OpDescription     = "Creates a 3d tunnel effect",
+  REGS_URL 			         = "https://github.com/lublak/FusionFuses",
+  REG_Source_GlobalCtrls = true,
+  REG_Source_SizeCtrls   = true,
+  REG_Source_AspectCtrls = true,
+  REG_Source_DepthCtrls  = true,
+  REG_TimeVariant        = true,
+
+  REG_Fuse_NoEdit     = true,
+	REG_Fuse_NoReload   = true,
+})
+
+TunnelParams = [[
+  float textureXCount;
+  float textureYCount;
+  float zoom;
+  int autoZoom;
+  float zoomSpeed;
+  float center[2];
+  float srcSize[2];
+  int deepness;
+  float color[3];
+  float transparency;
+  float iTime;
+  float angel;
+  float autoRotate;
+  float rotationSpeed;
+]]
+
+TunnelKernel = [[
+  __KERNEL__ void TunnelKernel(__CONSTANTREF__ TunnelParams *params, __TEXTURE2D__ src, __TEXTURE2D_WRITE__ dst) {
+    DEFINE_KERNEL_ITERATORS_XY(x, y);
+
+    float width = params->srcSize[0];
+    float height = params->srcSize[1];
+
+    float2 iResolution = to_float2(width - 1, height - 1);
+    float iTime = params->iTime;
+
+    float d = min(iResolution.x, iResolution.y);
+    float2 p = (2.0 * to_float2(x, y) - iResolution) / d - (2.0 * to_float2(width * params->center[0], height * params->center[1]) - iResolution) / d;
+
+    float l = length(p);
+
+    float angel;
+    if(params->autoRotate == 1) angel = iTime*params->rotationSpeed;
+    else angel = params->angel;
+
+    float zoom;
+    if(params->autoZoom == 1) zoom = iTime*params->zoomSpeed;
+    else zoom = params->zoom;
+
+    float2 uv = to_float2(params->textureYCount / l + zoom, (_atan2f(p.x, p.y) + angel) * params->textureXCount / 2.0 / M_PI);
+    float4 out = _tex2DVec4(src, uv.x, uv.y);
+
+    if(params->deepness == 1) {
+      float s = _clampf(0.0f, 1.0f, l);
+      float3 col;
+      col.x = out.x;
+      col.y = out.y;
+      col.z = out.z;
+      out = to_float4_aw(col * s + to_float3(params->color[0], params->color[1], params->color[2]) * (1.0f - s), 1.0f);
+    } else if (params->deepness == 2) {
+      out *= 1.0f - (1.0f - _clampf(0.0f, 1.0f, l)) * params->transparency;
+    }
+
+    _tex2DVec4Write(dst, x, y, out);
+  }
+]]
+
+function Create()
+  self:BeginControlNest("Style", "Style", true, {})
+  InTextureXCount = self:AddInput("Texture X Count", "TextureXCount", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "SliderControl",
+    INP_MinScale         = 1,
+    INP_MaxScale         = 10,
+    INP_Default          = 4,
+  })
+  InTextureYCount = self:AddInput("Texture Y Count", "TextureYCount", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "SliderControl",
+    INP_MinScale         = 1,
+    INP_MaxScale         = 10,
+    INP_Default          = 1,
+  })
+  InDeepness = self:AddInput("Deepness", "Deepness", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "ComboControl",
+    INP_Default          = 0.0,
+    INP_Integer          = true,
+    INP_DoNotifyChanged  = true,
+    { CCS_AddString = "None", },
+    { CCS_AddString = "Color", },
+    { CCS_AddString = "Transparency", },
+  })
+  InColorR = self:AddInput("Red", "Red", {
+    ICS_Name             = "Color",
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "ColorControl",
+    INP_Default          = 0.0,
+    INP_MaxScale         = 1.0,
+    ICD_Center           = 1.0,
+    INP_DoNotifyChanged  = true,
+    CLRC_ShowWheel       = true,
+    IC_ControlGroup      = 1,
+    IC_ControlID         = 0,
+    INP_Visible          = false,
+  })
+  InColorG = self:AddInput("Green", "Green", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "ColorControl",
+    INP_Default          = 0.5,
+    INP_DoNotifyChanged  = true,
+    IC_ControlGroup      = 1,
+    IC_ControlID         = 1,
+    INP_Visible          = false,
+  })
+  InColorB = self:AddInput("Blue", "Blue", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "ColorControl",
+    INP_Default          = 1.0,
+    INP_DoNotifyChanged  = true,
+    IC_ControlGroup      = 1,
+    IC_ControlID         = 2,
+    INP_Visible          = false,
+  })
+  InColorTransparency = self:AddInput("Transparency", "Transparency", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "SliderControl",
+    INP_Default          = 1.0,
+    INP_DoNotifyChanged  = true,
+    INP_Visible          = false,
+  })
+  self:EndControlNest()
+  self:BeginControlNest("Transform", "Transform", false, {})
+  InZoom = self:AddInput("Zoom", "Zoom", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "ScrewControl",
+    INP_MinScale         = -100,
+    INP_MaxScale         = 100,
+    INP_Default          = 0,
+    INP_Visible          = false,
+  })
+  InZoomSpeed = self:AddInput("Zoom Speed", "ZoomSpeed", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "SliderControl",
+    INP_MinScale         = -1,
+    INP_MaxScale         = 1,
+    INP_Default          = 0.1,
+    INP_Visible          = false,
+  })
+  InAutoZoom = self:AddInput("Auto Zoom", "AutoZoom", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "CheckboxControl",
+    INP_Integer          = true,
+    INP_Default          = 0,
+    INP_DoNotifyChanged  = true,
+  })
+  InCenter = self:AddInput("Center", "Center", {
+    LINKID_DataType      = "Point",
+    INP_Default          = 0.0,
+    INPID_InputControl   = "OffsetControl",
+    INPID_PreviewControl = "CrosshairControl",
+  })
+  InAngle = self:AddInput("Angle", "Angle", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "ScrewControl",
+    INP_Default          = 0.0,
+    INPID_PreviewControl = "AngleControl",
+    ACID_Center          = "Center",
+    INP_Visible          = false,
+  })
+  InRotationSpeed = self:AddInput("Rotation Speed", "RotationSpeed", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "SliderControl",
+    INP_MinScale         = -1,
+    INP_MaxScale         = 1,
+    INP_Default          = 0.1,
+    INP_Visible          = false,
+  })
+  InAutoRotate = self:AddInput("Auto Rotate", "AutoRotate", {
+    LINKID_DataType      = "Number",
+    INPID_InputControl   = "CheckboxControl",
+    INP_Integer          = true,
+    INP_Default          = 0,
+    INP_DoNotifyChanged  = true,
+  })
+  self:EndControlNest()
+  InImage = self:AddInput("Input", "Input", {
+    LINKID_DataType      = "Image",
+    LINK_Main            = 1,
+    INP_AcceptsGPUImages = true,
+  })
+  OutImage = self:AddOutput("Output", "Output", {
+    LINKID_DataType      = "Image",
+    LINK_Main            = 1,
+  })
+end
+
+
+function Process(req)
+  local realwidth = Width
+  local realheight = Height
+
+  Width = Width / Scale
+  Height = Height / Scale
+  Scale = 1
+
+  local imgattrs = {
+    IMG_Document = self.Comp,
+    { IMG_Channel = "Red", },
+    { IMG_Channel = "Green", },
+    { IMG_Channel = "Blue", },
+    { IMG_Channel = "Alpha", },
+    IMG_Width = Width,
+    IMG_Height = Height,
+    IMG_XScale = XAspect,
+    IMG_YScale = YAspect,
+    IMAT_OriginalWidth = realwidth,
+    IMAT_OriginalHeight = realheight,
+    IMG_Quality = not req:IsQuick(),
+    IMG_MotionBlurQuality = not req:IsNoMotionBlur(),
+    IMG_DeferAlloc = true,
+  }
+
+  if not req:IsStampOnly() then
+      imgattrs.IMG_ProxyScale = 1
+  end
+
+  if SourceDepth ~= 0 then
+      imgattrs.IMG_Depth = SourceDepth
+  end
+
+  local img = InImage:GetValue(req)
+  local result = Image(imgattrs)
+  local node = DVIPComputeNode(req, "TunnelKernel", TunnelKernel, "TunnelParams", TunnelParams)
+  local params = node:GetParamBlock(TunnelParams)
+
+  params.textureXCount = InTextureXCount:GetValue(req).Value
+  params.textureYCount = InTextureYCount:GetValue(req).Value
+  params.zoom          = InZoom:GetValue(req).Value
+  params.autoZoom      = InAutoZoom:GetValue(req).Value
+  params.zoomSpeed     = InZoomSpeed:GetValue(req).Value
+  params.center[0]     = InCenter:GetValue(req).X
+  params.center[1]     = InCenter:GetValue(req).Y
+  params.srcSize[0]    = Width
+  params.srcSize[1]    = Height
+  params.color[0]      = InColorR:GetValue(req).Value
+  params.color[1]      = InColorG:GetValue(req).Value
+  params.color[2]      = InColorB:GetValue(req).Value
+  params.transparency  = InColorTransparency:GetValue(req).Value
+  params.angel         = InAngle:GetValue(req).Value * math.pi / 180
+  params.deepness      = InDeepness:GetValue(req).Value
+  params.autoRotate    = InAutoRotate:GetValue(req).Value
+  params.rotationSpeed = InRotationSpeed:GetValue(req).Value
+  params.iTime         = req.Time * 0.1
+
+  node:SetParamBlock(params)
+
+  node:AddSampler("RowSampler", TEX_FILTER_MODE_LINEAR, TEX_ADDRESS_MODE_WRAP, TEX_NORMALIZED_COORDS_TRUE)
+  node:AddInput("src", img)
+  node:AddOutput("dst", result)
+
+  local ok = node:RunSession(req)
+
+  if not ok then
+    result = nil
+    dump(node:GetErrorLog())
+  end
+
+  OutImage:Set(req, result)
+end
+function NotifyChanged(inp, param, time)
+  if inp ~= nil and param ~= nil then
+    if inp == InAutoZoom then
+      if param.Value == 1.0 then
+        InZoomSpeed:SetAttrs({ IC_Visible = true })
+        InZoom:SetAttrs({ IC_Visible = false })
+      else
+        InZoomSpeed:SetAttrs({ IC_Visible = false })
+        InZoom:SetAttrs({ IC_Visible = true })
+      end
+    elseif inp == InAutoRotate then
+      if param.Value == 1.0 then
+        InAngle:SetAttrs({ IC_Visible = false })
+        InRotationSpeed:SetAttrs({ IC_Visible = true })
+      else
+        InAngle:SetAttrs({ IC_Visible = true })
+        InRotationSpeed:SetAttrs({ IC_Visible = false })
+      end
+    elseif inp == InDeepness then
+      if param.Value == 0.0 then
+        InColorR:SetAttrs({ IC_Visible = false })
+        InColorTransparency:SetAttrs({ IC_Visible = false })
+      elseif param.Value == 1.0 then
+        InColorR:SetAttrs({ IC_Visible = true })
+        InColorTransparency:SetAttrs({ IC_Visible = false })
+      elseif param.Value == 2.0 then
+        InColorR:SetAttrs({ IC_Visible = false })
+        InColorTransparency:SetAttrs({ IC_Visible = true })
+      end
+    end
+  end
+end
