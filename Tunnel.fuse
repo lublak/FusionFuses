@@ -8,15 +8,15 @@ FuRegisterClass("Tunnel", CT_SourceTool, {
   REGS_Category          = "lublak",
   REGS_OpIconString      = "Tunnel",
   REGS_OpDescription     = "Creates a 3d tunnel effect",
-  REGS_URL 			         = "https://github.com/lublak/FusionFuses",
+  REGS_URL               = "https://github.com/lublak/FusionFuses",
   REG_Source_GlobalCtrls = true,
   REG_Source_SizeCtrls   = true,
   REG_Source_AspectCtrls = true,
   REG_Source_DepthCtrls  = true,
   REG_TimeVariant        = true,
 
-  REG_Fuse_NoEdit     = true,
-	REG_Fuse_NoReload   = true,
+  REG_Fuse_NoEdit        = true,
+  REG_Fuse_NoReload      = true,
 })
 
 TunnelParams = [[
