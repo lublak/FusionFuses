@@ -9,6 +9,7 @@ FuRegisterClass("Tunnel", CT_SourceTool, {
   REGS_OpIconString      = "Tunnel",
   REGS_OpDescription     = "Creates a 3d tunnel effect from a texture input",
   REGS_URL               = "https://github.com/lublak/FusionFuses",
+  REG_OpNoMask           = true,
   REG_Source_GlobalCtrls = true,
   REG_Source_SizeCtrls   = true,
   REG_Source_AspectCtrls = true,
@@ -46,8 +47,8 @@ TunnelKernel = [[
     float2 iResolution = to_float2(width - 1, height - 1);
     float iTime = params->iTime;
 
-    float d = min(iResolution.x, iResolution.y);
-    float2 p = (2.0 * to_float2(x, y) - iResolution) / d - (2.0 * to_float2(width * params->center[0], height * params->center[1]) - iResolution) / d;
+    float d = _fminf(iResolution.x, iResolution.y);
+    float2 p = (2.0f * to_float2(x, y) - iResolution) / d - (2.0f * to_float2(width * params->center[0], height * params->center[1]) - iResolution) / d;
 
     float l = length(p);
 
@@ -200,6 +201,7 @@ function Create()
     LINKID_DataType      = "Image",
     LINK_Main            = 1,
     INP_AcceptsGPUImages = true,
+    INP_Required         = false,
   })
   OutImage = self:AddOutput("Output", "Output", {
     LINKID_DataType      = "Image",
@@ -235,15 +237,28 @@ function Process(req)
   }
 
   if not req:IsStampOnly() then
-      imgattrs.IMG_ProxyScale = 1
+    imgattrs.IMG_ProxyScale = 1
   end
 
   if SourceDepth ~= 0 then
-      imgattrs.IMG_Depth = SourceDepth
+    imgattrs.IMG_Depth = SourceDepth
   end
 
-  local img = InImage:GetValue(req)
+
   local result = Image(imgattrs)
+  
+  if req:IsPreCalc() then
+    OutImage:Set(req, result)
+    return
+  end
+  
+  local img = InImage:GetValue(req)
+  
+  if (img == nil) then
+    OutImage:Set(req, result)
+    return
+  end
+  
   local node = DVIPComputeNode(req, "TunnelKernel", TunnelKernel, "TunnelParams", TunnelParams)
 
   if (lastreqtime ~= req.Time - 1) then
@@ -274,6 +289,7 @@ function Process(req)
 
   node:AddSampler("RowSampler", TEX_FILTER_MODE_LINEAR, TEX_ADDRESS_MODE_WRAP, TEX_NORMALIZED_COORDS_TRUE)
   node:AddInput("src", img)
+
   node:AddOutput("dst", result)
 
   local ok = node:RunSession(req)
